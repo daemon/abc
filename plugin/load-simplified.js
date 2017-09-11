@@ -10,7 +10,7 @@ var i = 0;
 for (var n of nodes) {
   window.translations[i] = n.textContent;
   (function (n) {
-    fetch("http://173.255.236.180:8888/simplify", {
+    fetch("http://127.0.0.1:16384/simplify", {
       method: "POST",
       mode: "cors",
       body: JSON.stringify({text: n.textContent})

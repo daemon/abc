@@ -139,15 +139,16 @@ class SimplifyEndpoint:
     doc = self.nlp(text)
     doc_text = []
     for sent in doc.sents:
-      context = sent.text
+      context = ""
       words = []
       for word in sent:
         tok = word
         word = word.text
+        context2 = "".join([context, " ", word])
         if re.match(self.word_pattern, word):
-          synonym = self.find_easiest_synonym(tok, context)
-          context = context.replace(word, synonym)
+          synonym = self.find_easiest_synonym(tok, context2)
           word = " " + synonym
+          context += word
         words.append(word)
       doc_text.append("".join(words).strip())
     return dict(text=self.align_whitespace(text, " ".join(doc_text)))
