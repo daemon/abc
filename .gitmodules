@@ -1,0 +1,6 @@
+[submodule "dictionary"]
+	path = dictionary
+	url = https://github.com/adambom/dictionary
+[submodule "server/dictionary"]
+	path = server/dictionary
+	url = https://github.com/adambom/dictionary

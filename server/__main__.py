@@ -1,5 +1,7 @@
 import cherrypy
 import cherrypy_cors
+import codecs
+import gensim
 import inflect
 import json
 import math
@@ -24,10 +26,11 @@ def json_in(f):
   return wrapper
 
 class SimplifyEndpoint:
-  def __init__(self, top10k, top100k, nlp):
+  def __init__(self, top10k, top100k, nlp, model):
     self.top10k = top10k
     self.top100k = top100k
     self.nlp = nlp
+    self.model = model
     self.cache = {}
     self.engine = inflect.engine()
     self.word_pattern = re.compile(r"^\w[\w\.\d]*$")
@@ -62,35 +65,25 @@ class SimplifyEndpoint:
         pass
     return target.text
 
-  def lookup_definitions(self, word):
-    if not word in self.cache:
-      response = requests.get("http://api.pearson.com/v2/dictionaries/ldoce5/entries?headword={}".format(word)).content.decode()
-      self.cache[word] = response
-    else:
-      response = self.cache[word]
-    response = json.loads(response)["results"]
-    if not response:
-      return [""]
-    try:
-      return [entry["senses"][0]["definition"] for entry in response]
-    except:
-      return [""]    
-
   def compute_score(self, word, original, context):
     if not re.match(self.word_pattern, word):
-      return -1
+      return -100
+    score = 0.
     tok = self.nlp(word)[0]
+    context = context.replace(original, word)
     if tok.lemma_.lower() not in self.top100k:
-      return -1 + math.asin(tok.similarity(context))
+      score -= 20
+    similarity = self.model.score([context.split()])[0]
+    if similarity == 0.:
+      score -= 100
+    else:
+      score += 100 * math.exp(0.01 * similarity)
     synonyms = [entry["word"].lower() for entry in self.find_synonyms(word)][:8]
-    score = -self.top100k[tok.lemma_.lower()] / 100000
+    score += 100 * -self.top100k[tok.lemma_.lower()] / 100000
     if original.lower() in synonyms:
-      score += 0.2
-#    defs = self.lookup_definitions(word)
-#    defs = [self.nlp(d[0]).similarity(context) for d in defs]
-#    print(max(defs))
-    print("{} {} {} : {}".format(word, score, math.asin(tok.similarity(context)), score + math.asin(tok.similarity(context))))
-    return score + math.asin(tok.similarity(context))
+      score += 20
+    print("{} {}".format(word, score))
+    return score
 
   def find_synonyms(self, word):
     if word.lower() not in self.cache:
@@ -114,9 +107,9 @@ class SimplifyEndpoint:
       return word
     results = self.find_synonyms(word)
     try:
-      top_score = -0.5 + self.compute_score(word.lower(), word.lower(), context)
+      top_score = -100 + self.compute_score(word.lower(), word.lower(), context)
     except:
-      top_score = -2
+      top_score = -100
     best_word = word
     index = 0
     for entry in results:
@@ -146,12 +139,15 @@ class SimplifyEndpoint:
     doc = self.nlp(text)
     doc_text = []
     for sent in doc.sents:
+      context = sent.text
       words = []
       for word in sent:
         tok = word
         word = word.text
         if re.match(self.word_pattern, word):
-          word = " " + self.find_easiest_synonym(tok, sent)
+          synonym = self.find_easiest_synonym(tok, context)
+          context = context.replace(word, synonym)
+          word = " " + synonym
         words.append(word)
       doc_text.append("".join(words).strip())
     return dict(text=self.align_whitespace(text, " ".join(doc_text)))
@@ -160,38 +156,37 @@ def read_wordlists():
   top_10k = {}
   top_100k = {}
   i = 0
-  with open("top5k") as f:
+  with codecs.open("top5k", "r", "utf8") as f:
     for line in f.readlines():
       i += 1
       if line.lower().strip() not in top_10k:
         top_10k[line.lower().strip()] = i
-  with open("top100k") as f:
+  with codecs.open("top5k", "r", "utf8") as f:
     for line in f.readlines():
       i += 1
       if line.lower().strip() not in top_100k:
         top_100k[line.lower().strip()] = i
-#      if line.lower().strip() not in top_10k and i < 10000:
-#        top_10k[line.lower().strip()] = i
   return (top_10k, top_100k)
 
 def main():
   nlp = spacy.load("en_core_web_md")
-  (top10k, top100k) = read_wordlists()
-  run_server(top10k, top100k, nlp)
+  top10k, top100k = read_wordlists()
+  model = gensim.models.Word2Vec.load(r"A:\reddit_rc.db.wv")
+  run_server(top10k, top100k, nlp, model)
 
-def run_server(top10k, top100k, nlp):
+def run_server(top10k, top100k, nlp, model):
   cherrypy.config.update({
     "environment": "production",
     "log.screen": True
   })
-  cherrypy.server.socket_port = 8888
-  cherrypy.server.socket_host = "0.0.0.0"
+  cherrypy.server.socket_port = 16384
+  #cherrypy.server.socket_host = "0.0.0.0"
   rest_conf = {"/": {
     "request.dispatch": cherrypy.dispatch.MethodDispatcher(),
     'cors.expose.on': True
   }}
   cherrypy_cors.install()
-  cherrypy.quickstart(SimplifyEndpoint(top10k, top100k, nlp), "/simplify", rest_conf)
+  cherrypy.quickstart(SimplifyEndpoint(top10k, top100k, nlp, model), "/simplify", rest_conf)
   
 if __name__ == '__main__':
   main()
