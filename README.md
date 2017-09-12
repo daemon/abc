@@ -6,3 +6,11 @@ Before conversion:
 
 After conversion:
 ![Before conversion](http://i.imgur.com/hMPZEWB.png)
+
+## Requirements
+* SpaCy with en_core_web_md 
+* gensim with models https://mega.nz/#F!BzAiVJxS!s4Hpw87b3SIPYdgOJm914g (download all and save to same directory)
+* cherrypy
+* cherrypy_cors
+* inflect
+* requests
